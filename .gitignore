@@ -8,6 +8,7 @@ __pycache__/
 # Data outputs (generated)
 data/output/cleaned_data/
 data/bronze/
+data/silver/
 data/gold/
 
 # Hadoop/Spark temp artifacts

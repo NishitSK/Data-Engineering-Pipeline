@@ -66,6 +66,12 @@ spark = (
     SparkSession.builder
     .appName("DataEngineeringPipeline")
 
+    # Delta support
+    .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.2.0")
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    .config("spark.hadoop.fs.permissions.umask-mode", "000")
+
     # ── Java 17+ module access (required by Spark 4.x) ───────────────────────
     .config(
         "spark.driver.extraJavaOptions",
@@ -100,7 +106,6 @@ spark = (
 
     # Use single partition for small data (avoids multiple part files)
     .config("spark.sql.shuffle.partitions", "1")
-
     .getOrCreate()
 )
 
