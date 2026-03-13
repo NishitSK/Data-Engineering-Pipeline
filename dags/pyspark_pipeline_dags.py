@@ -129,7 +129,7 @@ with DAG(
     dag_id="event_driven_pyspark_pipeline",
     description="Monitors data/input and runs PySpark pipeline when a new file appears",
     start_date=pendulum.datetime(2026, 1, 1, tz="UTC"),
-    schedule="*/5 * * * *",
+    schedule="* * * * *",
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["spark", "delta", "event-driven", "sensor"],
@@ -138,9 +138,9 @@ with DAG(
         task_id="detect_new_input_file",
         fs_conn_id=FS_CONN_ID,
         filepath=INPUT_FILE_GLOB,
-        poke_interval=30,
-        timeout=60 * 60,
-        mode="reschedule",
+        poke_interval=1,
+        timeout=3600,
+        mode="poke",
     )
 
     event_start_log = PythonOperator(

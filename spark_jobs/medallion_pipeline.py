@@ -56,8 +56,9 @@ def write_delta(df: DataFrame, output_path: str, mode: str = "overwrite") -> Non
 
 
 def run_bronze_layer(spark: SparkSession, input_path: str, bronze_path: str, logger: logging.Logger) -> DataFrame:
-    logger.info("Bronze layer: reading raw files from %s", input_path)
+    logger.info("Bronze layer: syncing records from %s (full refresh to support removals)", input_path)
 
+    # Use batch read to ensure deletions in the source folder are reflected in the target
     bronze_df = (
         spark.read.option("header", True)
         .option("inferSchema", True)
@@ -66,8 +67,9 @@ def run_bronze_layer(spark: SparkSession, input_path: str, bronze_path: str, log
         .withColumn("source_file", F.input_file_name())
     )
 
-    logger.info("Bronze layer: writing Delta table to %s", bronze_path)
-    write_delta(bronze_df, bronze_path)
+    # Overwrite mode ensures the Bronze table is a perfect mirror of the input folder
+    logger.info("Bronze layer: updating Delta table at %s", bronze_path)
+    write_delta(bronze_df, bronze_path, mode="overwrite")
 
     return bronze_df
 
@@ -158,7 +160,9 @@ def run_gold_layer(spark: SparkSession, silver_path: str, gold_path: str, logger
         .agg(
             F.count(F.lit(1)).alias("total_orders_per_day"),
             F.sum("revenue_value").alias("total_revenue_per_day"),
+            F.concat_ws(", ", F.collect_list(F.col("order_id"))).alias("order_ids")
         )
+        .select("order_date", "order_ids", "total_orders_per_day", "total_revenue_per_day")
         .orderBy("order_date")
     )
 
