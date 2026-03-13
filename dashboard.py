@@ -150,37 +150,31 @@ def _compute_gold_from_raw(input_path: str) -> pd.DataFrame:
         
     raw_combined = pd.concat(dfs, ignore_index=True)
     
-    # 1. Resolve date
-    raw_combined["date"] = pd.to_datetime(raw_combined.get("order_date", raw_combined.get("event_timestamp", pd.Timestamp.now())), errors="coerce")
-    raw_combined.dropna(subset=["date"], inplace=True)
-    raw_combined["date"] = raw_combined["date"].dt.date # Use date only for grouping
+    # 2. Extract timestamp and date
+    raw_combined["timestamp"] = pd.to_datetime(raw_combined.get("order_date", raw_combined.get("event_timestamp", pd.Timestamp.now())), errors="coerce")
+    raw_combined.dropna(subset=["timestamp"], inplace=True)
+    raw_combined["date"] = raw_combined["timestamp"].dt.date
 
-    # 2. Resolve revenue
-    if "revenue" in raw_combined.columns:
-        raw_combined["rev"] = pd.to_numeric(raw_combined["revenue"], errors="coerce").fillna(0.0)
-    elif "unit_price" in raw_combined.columns and "quantity" in raw_combined.columns:
-        raw_combined["rev"] = raw_combined["unit_price"] * raw_combined["quantity"]
-    else:
-        raw_combined["rev"] = 0.0
-
-    # 3. Aggregate (Match Gold Schema + New Order IDs column)
+    # 3. Aggregate (Match Gold Schema + New Order IDs column + Timestamp)
     gold_style = (
         raw_combined.groupby("date")
         .agg(
             total_orders=("date", "count"),
-            total_revenue=("rev", "sum"),
+            last_processed=("timestamp", "max"),
             order_ids=("order_id", lambda x: ", ".join(x.dropna().astype(str).unique()))
         )
         .reset_index()
     )
     
-    # 4. Reorder columns: display order_ids next to date
-    cols = ["date", "order_ids", "total_orders", "total_revenue"]
+    # 4. Reorder columns: replace revenue with timestamp
+    cols = ["date", "order_ids", "total_orders", "last_processed"]
     gold_style = gold_style[cols]
+    
+    # Format timestamp for better display
+    gold_style["last_processed"] = gold_style["last_processed"].dt.strftime('%Y-%m-%d %H:%M:%S')
     
     # Cast for performance and consistency
     gold_style["total_orders"] = gold_style["total_orders"].astype("int32")
-    gold_style["total_revenue"] = gold_style["total_revenue"].astype("float32")
     
     return gold_style.sort_values("date")
 
@@ -277,6 +271,8 @@ def render_dashboard() -> None:
     with top_col2:
         if st.button("🔄 Refresh Now"):
             st.cache_data.clear()
+            if "engine_notified" in st.session_state:
+                del st.session_state["engine_notified"]
             st.rerun()
 
     # Ultra-fast auto-refresh: every 1 second
@@ -307,19 +303,13 @@ def render_dashboard() -> None:
         st.warning("No data found in input folder. Please add CSV files to `data/input/`.")
         return
 
+    if "engine_notified" not in st.session_state:
+        st.toast("⚡ **Ultra-Fast Real-Time Engine Active**", icon="🚀")
+        st.session_state["engine_notified"] = True
+
     total_orders = int(gold_df["total_orders"].sum())
-    total_revenue = float(gold_df["total_revenue"].sum())
 
-    top_col1, top_col2 = st.columns([6, 1])
-    with top_col1:
-        st.success("**⚡ Ultra-Fast Real-Time Engine Active** (Showing changes instantly)")
-
-    metric_col_1, metric_col_2 = st.columns(2)
-    metric_col_1.metric("Total Living Orders", f"{total_orders:,}")
-    metric_col_2.metric("Total Living Revenue", f"{total_revenue:,.2f}")
-
-    st.subheader("Real-Time Revenue Trends")
-    st.line_chart(gold_df.set_index("date")["total_revenue"])
+    st.metric("Total Living Orders", f"{total_orders:,}")
 
     st.subheader("Real-Time Daily Orders")
     st.bar_chart(gold_df.set_index("date")["total_orders"])
